@@ -528,10 +528,11 @@ function renderDoubanCards(data, container) {
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
             
-            // 处理图片URL：豆瓣图片容易触发防盗链，改用公开图片代理
+            // 处理图片URL：豆瓣图片需要通过本站代理补 Referer，并带上代理鉴权参数
             const originalCoverUrl = item.cover;
+            const proxyAuthHash = window.__ENV__?.PASSWORD || localStorage.getItem('proxyAuthHash') || localStorage.getItem('passwordHash') || '';
             const proxiedCoverUrl = originalCoverUrl
-                ? `https://images.weserv.nl/?url=${originalCoverUrl.replace(/^https?:\/\//, '')}`
+                ? `${PROXY_URL}${encodeURIComponent(originalCoverUrl)}${proxyAuthHash ? `?auth=${encodeURIComponent(proxyAuthHash)}&t=${Date.now()}` : ''}`
                 : '';
             
             // 为不同设备优化卡片布局
