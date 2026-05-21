@@ -269,11 +269,16 @@ export async function onRequest(context) {
                  throw new Error(`HTTP error ${response.status}: ${response.statusText}. URL: ${targetUrl}. Body: ${errorBody.substring(0, 150)}`);
             }
 
-            // 读取响应内容为文本
-            const content = await response.text();
             const contentType = response.headers.get('Content-Type') || '';
-            logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}, 内容长度: ${content.length}`);
-            return { content, contentType, responseHeaders: response.headers }; // 同时返回原始响应头
+            const isTextContent =
+                contentType.includes('text/') ||
+                contentType.includes('json') ||
+                contentType.includes('javascript') ||
+                contentType.includes('xml') ||
+                contentType.includes('mpegurl');
+            const content = isTextContent ? await response.text() : response.body;
+            logDebug(`请求成功: ${targetUrl}, Content-Type: ${contentType}`);
+            return { content, contentType, responseHeaders: response.headers, isTextContent }; // 同时返回原始响应头
 
         } catch (error) {
              logDebug(`请求彻底失败: ${targetUrl}: ${error.message}`);
@@ -525,9 +530,16 @@ export async function onRequest(context) {
                         logDebug(`缓存内容是 M3U8，重新处理: ${targetUrl}`);
                         const processedM3u8 = await processM3u8Content(targetUrl, content, 0, env);
                         return createM3u8Response(processedM3u8);
-                    } else {
-                        logDebug(`从缓存返回非 M3U8 内容: ${targetUrl}`);
+                    } else if (
+                        contentType.includes('text/') ||
+                        contentType.includes('json') ||
+                        contentType.includes('javascript') ||
+                        contentType.includes('xml')
+                    ) {
+                        logDebug(`从缓存返回文本内容: ${targetUrl}`);
                         return createResponse(content, 200, new Headers(headers));
+                    } else {
+                        logDebug(`跳过旧的二进制缓存，重新请求: ${targetUrl}`);
                     }
                 } else {
                      logDebug(`[缓存未命中] 原始内容: ${targetUrl}`);
@@ -539,10 +551,10 @@ export async function onRequest(context) {
         }
 
         // --- 实际请求 ---
-        const { content, contentType, responseHeaders } = await fetchContentWithType(targetUrl);
+        const { content, contentType, responseHeaders, isTextContent } = await fetchContentWithType(targetUrl);
 
         // --- 写入缓存 (KV) ---
-        if (kvNamespace) {
+        if (kvNamespace && isTextContent) {
              try {
                  const headersToCache = {};
                  responseHeaders.forEach((value, key) => { headersToCache[key.toLowerCase()] = value; });
